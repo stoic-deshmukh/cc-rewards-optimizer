@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CardIQ — Credit Card Rewards Optimizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080B12;
+      --surface: #0F1420;
+      --surface2: #161C2D;
+      --border: rgba(255,255,255,0.07);
+      --border-bright: rgba(255,255,255,0.14);
+      --text: #E8EAF0;
+      --text-muted: #7A8099;
+      --text-dim: #4A5068;
+      --gold: #D4A843;
+      --gold-light: #F0C862;
+      --gold-dim: rgba(212,168,67,0.15);
+      --green: #34C98A;
+      --green-dim: rgba(52,201,138,0.12);
+      --red: #F06060;
+      --red-dim: rgba(240,96,96,0.12);
+      --blue: #5B8DEF;
+      --accent: #6C63FF;
+      --accent-dim: rgba(108,99,255,0.15);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* Background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 20px 80px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--gold), var(--accent));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--gold-light), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(26px, 5vw, 38px);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.5px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: var(--text-muted);
+      font-size: 15px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* Cards preview strip */
+    .cards-strip {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .card-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border-bright);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .card-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    /* Form Card */
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      margin-bottom: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .form-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--gold), var(--accent), transparent);
+    }
+
+    .form-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-title span {
+      width: 28px; height: 28px;
+      background: var(--gold-dim);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group.full { grid-column: 1 / -1; }
+
+    label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    select, input[type="text"], input[type="number"] {
+      background: var(--surface2);
+      border: 1px solid var(--border-bright);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      padding: 11px 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237A8099' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+      cursor: pointer;
+    }
+
+    select:focus, input:focus {
+      border-color: rgba(212,168,67,0.5);
+      box-shadow: 0 0 0 3px rgba(212,168,67,0.08);
+    }
+
+    select option { background: #1a2035; }
+
+    /* Transaction type toggle */
+    .toggle-group {
+      display: flex;
+      gap: 0;
+      border: 1px solid var(--border-bright);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .toggle-btn {
+      flex: 1;
+      padding: 11px 14px;
+      background: var(--surface2);
+      border: none;
+      color: var(--text-muted);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .toggle-btn:first-child { border-right: 1px solid var(--border-bright); }
+
+    .toggle-btn.active {
+      background: var(--gold-dim);
+      color: var(--gold-light);
+      border-color: transparent;
+    }
+
+    /* Amount input wrapper */
+    .amount-wrapper {
+      position: relative;
+    }
+
+    .amount-prefix {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--gold);
+      font-weight: 600;
+      font-size: 15px;
+      pointer-events: none;
+    }
+
+    .amount-wrapper input {
+      padding-left: 28px;
+    }
+
+    /* Submit button */
+    .submit-btn {
+      width: 100%;
+      padding: 14px 24px;
+      margin-top: 8px;
+      background: linear-gradient(135deg, #C49530, #D4A843, #E8C060);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #1a1200;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .submit-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(212,168,67,0.3);
+    }
+
+    .submit-btn:active:not(:disabled) { transform: translateY(0); }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Loading state */
+    .loading-section {
+      display: none;
+      text-align: center;
+      padding: 48px 24px;
+    }
+
+    .loading-section.visible { display: block; }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 2px solid var(--border-bright);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .loading-text strong {
+      display: block;
+      color: var(--text);
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+
+    /* Error */
+    .error-box {
+      display: none;
+      background: var(--red-dim);
+      border: 1px solid rgba(240,96,96,0.25);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      color: var(--red);
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .error-box.visible { display: block; }
+
+    /* Results */
+    .results-section {
+      display: none;
+    }
+
+    .results-section.visible { display: block; }
+
+    /* Winner card */
+    .winner-card {
+      background: linear-gradient(135deg, #1a1500 0%, #0F1420 60%);
+      border: 1px solid rgba(212,168,67,0.3);
+      border-radius: var(--radius);
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .winner-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light), transparent);
+    }
+
+    .winner-glow {
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 200px; height: 200px;
+      background: radial-gradient(circle, rgba(212,168,67,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .winner-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--gold-dim);
+      border: 1px solid rgba(212,168,67,0.3);
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .winner-card-name {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .winner-key-reason {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+
+    .winner-stats {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .winner-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .winner-stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    .winner-stat-value {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--gold-light);
+    }
+
+    .winner-stat-value.pct {
+      color: var(--green);
+    }
+
+    .winner-summary-text {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+
+    /* Rankings table */
+    .rankings-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .rankings-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .rankings-table thead tr {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .rankings-table th {
+      padding: 11px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .rankings-table th:nth-child(3),
+    .rankings-table th:nth-child(4) { text-align: right; }
+
+    .rankings-table tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+
+    .rankings-table tbody tr:last-child { border-bottom: none; }
+
+    .rankings-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+    .rankings-table td {
+      padding: 14px 16px;
+      font-size: 13px;
+      vertical-align: top;
+    }
+
+    .rankings-table td:nth-child(3),
+    .rankings-table td:nth-child(4) { text-align: right; }
+
+    .rank-badge {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .rank-1 { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1200; }
+    .rank-2 { background: rgba(180,180,200,0.15); color: #C0C4D0; }
+    .rank-3 { background: rgba(160,120,80,0.15); color: #C08060; }
+    .rank-4, .rank-5, .rank-6 { background: var(--surface2); color: var(--text-dim); }
+
+    .rank-cell { width: 42px; }
+
+    .card-name-cell {
+      font-weight: 600;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .card-name-cell .card-tag {
+      display: inline-block;
+      margin-top: 3px;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-dim);
+    }
+
+    .reward-value {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .reward-value.best { color: var(--gold-light); }
+    .reward-value.good { color: var(--green); }
+    .reward-value.ok { color: var(--text-muted); }
+    .reward-value.poor { color: var(--text-dim); }
+
+    .pct-value {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .reasoning-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      max-width: 340px;
+    }
+
+    .expand-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 0;
+      margin-top: 3px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
+    .footer a { color: var(--text-dim); text-decoration: none; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-group.full { grid-column: 1; }
+      .container { padding: 24px 16px 60px; }
+      .form-card { padding: 20px; }
+      .winner-card { padding: 20px; }
+      .winner-card-name { font-size: 20px; }
+      .winner-stats { gap: 16px; }
+
+      .rankings-table th:last-child,
+      .rankings-table td:last-child { display: none; }
+    }
+
+    /* Pulse dot for live */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">💳</div>
+        <span class="logo-text">CardIQ</span>
+      </div>
+      <h1>Credit Card Rewards Optimizer</h1>
+      <p>Tell us your transaction — we'll find the card that earns you the most.</p>
+    </div>
+
+    <!-- Cards strip -->
+    <div class="cards-strip">
+      <div class="card-chip"><span class="dot" style="background:#FF6B35"></span>Scapia Federal</div>
+      <div class="card-chip"><span class="dot" style="background:#00A651"></span>Tata Neu Plus</div>
+      <div class="card-chip"><span class="dot" style="background:#E01020"></span>ICICI Sapphiro</div>
+      <div class="card-chip"><span class="dot" style="background:#0066B3"></span>SBI Cashback</div>
+      <div class="card-chip"><span class="dot" style="background:#004C97"></span>HDFC Millennia</div>
+      <div class="card-chip"><span class="dot" style="background:#FC8019"></span>HDFC Swiggy</div>
+    </div>
+
+    <!-- Form -->
+    <div class="form-card">
+      <div class="form-title">
+        <span>🔍</span> Transaction Details
+      </div>
+
+      <form id="txnForm">
+        <div class="form-grid">
+          <!-- Transaction type -->
+          <div class="form-group full">
+            <label>Transaction Type</label>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn active" id="onlineBtn" onclick="setType('online')">
+                🌐 Online
+              </button>
+              <button type="button" class="toggle-btn" id="offlineBtn" onclick="setType('offline')">
+                🏪 Offline / In-Store
+              </button>
+            </div>
+            <input type="hidden" id="txnType" value="online" />
+          </div>
+
+          <!-- Category -->
+          <div class="form-group">
+            <label>Category</label>
+            <select id="category" required>
+              <option value="">Select category…</option>
+              <option value="dining">🍽️ Dining</option>
+              <option value="groceries">🛒 Groceries</option>
+              <option value="travel">✈️ Travel</option>
+              <option value="fuel">⛽ Fuel</option>
+              <option value="online shopping">🛍️ Online Shopping</option>
+              <option value="international">🌍 International</option>
+              <option value="entertainment">🎬 Entertainment</option>
+              <option value="utilities">💡 Utilities / Bills</option>
+              <option value="healthcare">🏥 Healthcare</option>
+              <option value="other">📦 Other</option>
+            </select>
+          </div>
+
+          <!-- Amount -->
+          <div class="form-group">
+            <label>Amount (₹)</label>
+            <div class="amount-wrapper">
+              <span class="amount-prefix">₹</span>
+              <input type="number" id="amount" placeholder="e.g. 2500" min="1" required />
+            </div>
+          </div>
+
+          <!-- Merchant -->
+          <div class="form-group full">
+            <label>Merchant Name <span style="color:var(--text-dim);font-weight:400;text-transform:none">(optional — helps with specific rewards)</span></label>
+            <input type="text" id="merchant" placeholder="e.g. Swiggy, Amazon, Zomato, MakeMyTrip…" />
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submitBtn" style="margin-top:20px">
+          ✦ Find Best Card
+        </button>
+      </form>
+    </div>
+
+    <!-- Error -->
+    <div class="error-box" id="errorBox"></div>
+
+    <!-- Loading -->
+    <div class="loading-section" id="loadingSection">
+      <div class="spinner"></div>
+      <div class="loading-text">
+        <strong>Analyzing your transaction…</strong>
+        Claude is comparing reward structures across all 6 cards
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-section" id="resultsSection">
+      <!-- Winner card -->
+      <div class="winner-card" id="winnerCard">
+        <div class="winner-glow"></div>
+        <div class="winner-badge">🏆 Best Card for This Transaction</div>
+        <div class="winner-card-name" id="winnerName">—</div>
+        <div class="winner-key-reason" id="winnerKeyReason">—</div>
+        <div class="winner-stats">
+          <div class="winner-stat">
+            <div class="winner-stat-label">Reward Earned</div>
+            <div class="winner-stat-value" id="winnerReward">—</div>
+          </div>
+          <div class="winner-stat">
+            <div class="winner-stat-label">Effective Cashback</div>
+            <div class="winner-stat-value pct" id="winnerPct">—</div>
+          </div>
+          <div class="winner-stat">
+            <div class="winner-stat-label">Reward Type</div>
+            <div class="winner-stat-value" style="font-size:15px;color:var(--text)" id="winnerType">—</div>
+          </div>
+        </div>
+        <div class="winner-summary-text" id="winnerSummary"></div>
+      </div>
+
+      <!-- Rankings table -->
+      <div class="rankings-label">All Cards Ranked</div>
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th class="rank-cell">#</th>
+            <th>Card</th>
+            <th>Reward Earned</th>
+            <th>Cashback %</th>
+            <th>Reasoning</th>
+          </tr>
+        </thead>
+        <tbody id="rankingsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      Powered by <strong style="color:var(--text-muted)">Claude AI</strong> · Reward structures are indicative and may change. Always verify with your bank.
+    </div>
+  </div>
+
+  <script>
+    let txnType = 'online';
+
+    function setType(type) {
+      txnType = type;
+      document.getElementById('txnType').value = type;
+      document.getElementById('onlineBtn').classList.toggle('active', type === 'online');
+      document.getElementById('offlineBtn').classList.toggle('active', type === 'offline');
+    }
+
+    function getRewardClass(rank) {
+      if (rank === 1) return 'best';
+      if (rank === 2) return 'good';
+      if (rank <= 4) return 'ok';
+      return 'poor';
+    }
+
+    function getPctColor(pct) {
+      const val = parseFloat(pct);
+      if (val >= 5) return '#D4A843';
+      if (val >= 2) return '#34C98A';
+      if (val >= 1) return '#7A8099';
+      return '#4A5068';
+    }
+
+    function renderResults(data) {
+      const { recommendations, winner_summary } = data;
+      const winner = recommendations[0];
+
+      document.getElementById('winnerName').textContent = winner.card;
+      document.getElementById('winnerKeyReason').textContent = winner.key_reason;
+      document.getElementById('winnerReward').textContent = winner.reward_earned;
+      document.getElementById('winnerPct').textContent = winner.effective_cashback_pct;
+      document.getElementById('winnerType').textContent = winner.reward_type;
+      document.getElementById('winnerSummary').textContent = winner_summary;
+
+      const tbody = document.getElementById('rankingsBody');
+      tbody.innerHTML = '';
+
+      recommendations.forEach((rec) => {
+        const tr = document.createElement('tr');
+        const rewardClass = getRewardClass(rec.rank);
+        const pctColor = getPctColor(rec.effective_cashback_pct);
+
+        tr.innerHTML = `
+          <td>
+            <div class="rank-badge rank-${rec.rank}">${rec.rank}</div>
+          </td>
+          <td>
+            <div class="card-name-cell">
+              ${rec.card}
+              <div class="card-tag">${rec.reward_type}</div>
+            </div>
+          </td>
+          <td>
+            <span class="reward-value ${rewardClass}">${rec.reward_earned}</span>
+          </td>
+          <td>
+            <span class="pct-value" style="color:${pctColor}">${rec.effective_cashback_pct}</span>
+          </td>
+          <td>
+            <div class="reasoning-text">${rec.reasoning}</div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('resultsSection').classList.add('visible');
+      document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.getElementById('txnForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const category = document.getElementById('category').value;
+      const amount = document.getElementById('amount').value;
+      const merchant = document.getElementById('merchant').value.trim();
+
+      if (!category || !amount) return;
+
+      // Reset UI
+      document.getElementById('errorBox').classList.remove('visible');
+      document.getElementById('resultsSection').classList.remove('visible');
+      document.getElementById('loadingSection').classList.add('visible');
+      document.getElementById('submitBtn').disabled = true;
+
+      try {
+        const res = await fetch('/api/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, merchant, amount: parseFloat(amount), transactionType: txnType })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Server error');
+
+        renderResults(data);
+      } catch (err) {
+        const errBox = document.getElementById('errorBox');
+        errBox.textContent = `Error: ${err.message}`;
+        errBox.classList.add('visible');
+      } finally {
+        document.getElementById('loadingSection').classList.remove('visible');
+        document.getElementById('submitBtn').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
