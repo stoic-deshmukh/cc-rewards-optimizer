@@ -1,77 +1,36 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
+const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const CARD_REWARD_STRUCTURES = `
-## Indian Credit Card Reward Structures (2025)
+// Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
-### 1. Scapia Federal Credit Card
-- Annual Fee: ₹0 (Lifetime Free)
-- Travel (flights, hotels, any platform): 10% in ScapiaCoins (1 ScapiaCoin = ₹1)
-- All other spends: 2% in ScapiaCoins
-- International transactions: 0% forex markup (excellent for international)
-- Fuel: 2% ScapiaCoins (no surcharge waiver)
-- Best for: Travel bookings, international transactions
+// Fetch active card structures from Supabase
+async function getCardStructures() {
+  const { data, error } = await supabase
+    .from('cards')
+    .select('card_name, issuer, reward_structure, last_updated')
+    .eq('is_active', true)
+    .order('card_name');
 
-### 2. Tata Neu Plus HDFC Bank Credit Card
-- Annual Fee: ₹499
-- Tata ecosystem spends (BigBasket, 1mg, Croma, Tata Cliq, Air Asia India, Westside, Starbucks): 2% NeuCoins (1 NeuCoin = ₹1)
-- All other non-EMI spends: 1% NeuCoins
-- Dining at non-Tata restaurants: 1% NeuCoins
-- EMI transactions: 0% NeuCoins
-- International: 1% NeuCoins + 3.5% forex markup
-- Best for: Tata ecosystem shopping (groceries via BigBasket, electronics via Croma)
+  if (error) throw new Error(`Failed to fetch card data: ${error.message}`);
+  if (!data || data.length === 0) throw new Error('No active cards found in database');
 
-### 3. ICICI Bank Sapphiro Credit Card
-- Annual Fee: ₹3,500
-- Dining (restaurants): 2 reward points per ₹100 (1 RP = ₹0.25, so ~0.5% base; dining actually gets 4 RP per ₹100 = 1%)
-  - Dining: 4 RP per ₹100 = 1% effective cashback
-- Online shopping: 2 RP per ₹100 = 0.5% effective cashback
-- Offline retail: 2 RP per ₹100 = 0.5% effective cashback
-- Grocery: 2 RP per ₹100 = 0.5% effective cashback
-- International: 2 RP per ₹100 = 0.5% effective cashback + 3.5% forex markup (net negative for international)
-- Travel (domestic flights via Yatra): bonus offers occasionally
-- Fuel: 1 RP per ₹100 = 0.25% effective (low value)
-- Perks: Airport lounge access (2/quarter domestic), golf, concierge
-- Best for: Dining, premium lifestyle benefits
-
-### 4. SBI Cashback Credit Card
-- Annual Fee: ₹999 (waived on ₹2L annual spend)
-- Online transactions (all categories): 5% cashback — capped at ₹5,000/month
-- Offline transactions: 1% cashback — capped at ₹5,000/month
-- Exclusions: No cashback on fuel, utilities, EMI, rent, wallet loads, government transactions
-- Dining online (Swiggy, Zomato): 5% cashback (counts as online)
-- Groceries online (BigBasket, Blinkit): 5% cashback
-- Travel online (MakeMyTrip, IRCTC): 5% cashback
-- International online: 5% cashback + 3.5% forex markup (nearly negates benefit internationally)
-- Best for: All online transactions — highest flat rate for online
-
-### 5. HDFC Diners Club Millennia Credit Card
-- Annual Fee: ₹1,000 (waived on ₹1L quarterly spend)
-- Preferred partners online (Amazon, Flipkart, BookMyShow, Cult.fit, Myntra, Swiggy, Tata Cliq, Zomato): 5% cashback — capped at ₹750/month per merchant
-- All other online spends: 1% cashback
-- Offline retail spends: 1% cashback
-- Dining offline: 1% cashback
-- Dining at preferred partners (Swiggy, Zomato): 5% cashback
-- Fuel: No cashback
-- International: 1% cashback + 3.5% forex markup (poor for international)
-- Best for: Shopping at preferred partners (Amazon, Flipkart, Swiggy, Zomato)
-
-### 6. HDFC Bank Swiggy Credit Card
-- Annual Fee: ₹500
-- Swiggy app (food ordering + Instamart groceries): 10% cashback — capped at ₹1,500/month combined
-- Online spends at select partners (Amazon, BookMyShow, Cleartrip, Myntra, Ola, PhonePe, Uber, Zomato): 5% cashback — combined cap of ₹1,500/month with above
-- All other spends (online and offline): 1% cashback
-- Dining offline (non-Swiggy): 1% cashback
-- Travel offline: 1% cashback
-- International: 1% cashback + 3.5% forex markup
-- Best for: Swiggy orders, Instamart groceries, Uber/Ola rides
-`;
+  return data
+    .map((card, i) =>
+      `### ${i + 1}. ${card.card_name} (${card.issuer})\nLast updated: ${new Date(card.last_updated).toDateString()}\n${card.reward_structure}`
+    )
+    .join('\n\n');
+}
 
 app.post('/api/recommend', async (req, res) => {
   const { category, merchant, amount, transactionType } = req.body;
@@ -85,11 +44,17 @@ app.post('/api/recommend', async (req, res) => {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
 
-  const client = new Anthropic({ apiKey });
+  try {
+    // Fetch latest card structures from DB
+    const cardStructures = await getCardStructures();
 
-  const prompt = `You are a credit card rewards expert specializing in Indian credit cards. Analyze the following transaction and rank ALL 6 credit cards from best to worst for this specific transaction.
+    const client = new Anthropic({ apiKey });
 
-${CARD_REWARD_STRUCTURES}
+    const prompt = `You are a credit card rewards expert specializing in Indian credit cards. Analyze the following transaction and rank ALL cards from best to worst for this specific transaction.
+
+## Indian Credit Card Reward Structures (sourced from latest MITC)
+
+${cardStructures}
 
 ## Transaction Details
 - Category: ${category}
@@ -121,9 +86,8 @@ Return a JSON object with this exact structure (no markdown, raw JSON only):
   "winner_summary": "2-sentence summary of the best card for this transaction and why it wins clearly"
 }
 
-Rank all 6 cards. The array must have exactly 6 entries ordered rank 1 (best) to rank 6 (worst).`;
+Rank all cards. The array must have exactly one entry per card ordered rank 1 (best) to last (worst).`;
 
-  try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 2000,
@@ -131,12 +95,12 @@ Rank all 6 cards. The array must have exactly 6 entries ordered rank 1 (best) to
     });
 
     const raw = message.content[0].text.trim();
-    // Strip markdown code fences if present
     const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
     const parsed = JSON.parse(jsonStr);
     res.json(parsed);
+
   } catch (err) {
-    console.error('API error:', err);
+    console.error('Error:', err);
     res.status(500).json({ error: err.message || 'Failed to get recommendation' });
   }
 });
