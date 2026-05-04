@@ -205,18 +205,23 @@ function formatWhatsAppResult(result) {
 
 app.post('/webhook/whatsapp', async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
-  const from = req.body.From;
+  const from = req.body.From || '';
   const body = (req.body.Body || '').trim();
   const lower = body.toLowerCase();
 
+  console.log(`[WA] from=${from} body="${body}"`);
+
   try {
     if (['menu', 'hi', 'hello', 'start'].includes(lower)) {
+      console.log('[WA] resetting session');
       await resetSession(from);
       twiml.message(categoryMenu());
       return res.type('text/xml').send(twiml.toString());
     }
 
+    console.log('[WA] reading session');
     const session = await getSession(from);
+    console.log('[WA] session:', JSON.stringify(session));
 
     if (session.step === 'category') {
       const num = parseInt(body);
@@ -246,13 +251,16 @@ app.post('/webhook/whatsapp', async (req, res) => {
       if (body === '1' || body === '2') {
         const transactionType = body === '1' ? 'online' : 'offline';
         const txnData = { ...session.data, transactionType };
+        console.log('[WA] calling Claude with:', JSON.stringify(txnData));
         await resetSession(from);
 
         try {
           const result = await getRecommendation(txnData);
+          console.log('[WA] Claude responded, winner:', result.recommendations[0].card);
           saveTransaction({ userId: from, ...txnData, result, source: 'whatsapp' });
           twiml.message(formatWhatsAppResult(result));
         } catch (err) {
+          console.error('[WA] getRecommendation error:', err.message);
           twiml.message(`❌ Sorry, something went wrong. Reply *menu* to try again.\n\nError: ${err.message}`);
         }
 
