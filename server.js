@@ -7,7 +7,7 @@ const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: false })); // needed for Twilio webhooks
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
@@ -36,6 +36,28 @@ async function getCardStructures() {
       `### ${i + 1}. ${card.card_name} (${card.issuer})\nLast updated: ${new Date(card.last_updated).toDateString()}\n${card.reward_structure}`
     )
     .join('\n\n');
+}
+
+async function saveTransaction({ userId, category, merchant, amount, transactionType, result, source }) {
+  try {
+    const supabase = getSupabase();
+    const winner = result.recommendations[0];
+    await supabase.from('transactions').insert({
+      user_id: userId,
+      category,
+      merchant: merchant || null,
+      amount,
+      transaction_type: transactionType,
+      best_card: winner.card,
+      reward_earned: winner.reward_earned,
+      cashback_pct: winner.effective_cashback_pct,
+      all_recommendations: result.recommendations,
+      source
+    });
+  } catch (err) {
+    console.error('Failed to save transaction:', err.message);
+    // non-fatal — don't break the main flow
+  }
 }
 
 // ─── Claude recommendation ───────────────────────────────────────────────────
@@ -99,12 +121,14 @@ Rank all cards. The array must have exactly one entry per card ordered rank 1 (b
 // ─── Web API ─────────────────────────────────────────────────────────────────
 
 app.post('/api/recommend', async (req, res) => {
-  const { category, merchant, amount, transactionType } = req.body;
+  const { category, merchant, amount, transactionType, userId } = req.body;
   if (!category || !amount || !transactionType) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   try {
     const result = await getRecommendation({ category, merchant, amount, transactionType });
+    // Save to history (non-blocking)
+    saveTransaction({ userId: userId || 'web-anonymous', category, merchant, amount, transactionType, result, source: 'web' });
     res.json(result);
   } catch (err) {
     console.error('Error:', err);
@@ -112,17 +136,31 @@ app.post('/api/recommend', async (req, res) => {
   }
 });
 
-// ─── WhatsApp bot session state ───────────────────────────────────────────────
+app.get('/api/history', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, category, merchant, amount, transaction_type, best_card, reward_earned, cashback_pct, source, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── WhatsApp bot ─────────────────────────────────────────────────────────────
 
 const sessions = new Map();
-// session shape: { step: 'category'|'merchant'|'amount'|'txntype'|'processing', data: {} }
-
 const CATEGORIES = ['dining', 'groceries', 'travel', 'fuel', 'online shopping', 'international'];
 
 function getSession(from) {
-  if (!sessions.has(from)) {
-    sessions.set(from, { step: 'category', data: {} });
-  }
+  if (!sessions.has(from)) sessions.set(from, { step: 'category', data: {} });
   return sessions.get(from);
 }
 
@@ -131,16 +169,7 @@ function resetSession(from) {
 }
 
 function categoryMenu() {
-  return `👋 Welcome to *CardIQ*! Which category is this transaction?
-
-1️⃣ Dining
-2️⃣ Groceries
-3️⃣ Travel
-4️⃣ Fuel
-5️⃣ Online Shopping
-6️⃣ International
-
-Reply with a number (1-6)`;
+  return `👋 Welcome to *CardIQ*! Which category is this transaction?\n\n1️⃣ Dining\n2️⃣ Groceries\n3️⃣ Travel\n4️⃣ Fuel\n5️⃣ Online Shopping\n6️⃣ International\n\nReply with a number (1-6)`;
 }
 
 function formatWhatsAppResult(result) {
@@ -152,21 +181,13 @@ function formatWhatsAppResult(result) {
     ``,
     `📊 *All Cards Ranked:*`,
   ];
-
   result.recommendations.forEach((rec) => {
     const medal = rec.rank === 1 ? '🥇' : rec.rank === 2 ? '🥈' : rec.rank === 3 ? '🥉' : `${rec.rank}.`;
     lines.push(`${medal} ${rec.card} — ${rec.reward_earned} (${rec.effective_cashback_pct})`);
   });
-
-  lines.push('');
-  lines.push(`📝 ${result.winner_summary}`);
-  lines.push('');
-  lines.push('_Reply *menu* to analyse another transaction_');
-
+  lines.push('', `📝 ${result.winner_summary}`, '', '_Reply *menu* to analyse another transaction_');
   return lines.join('\n');
 }
-
-// ─── WhatsApp webhook ─────────────────────────────────────────────────────────
 
 app.post('/webhook/whatsapp', async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
@@ -174,10 +195,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
   const body = (req.body.Body || '').trim();
   const lower = body.toLowerCase();
 
-  // Reset command
-  if (lower === 'menu' || lower === 'hi' || lower === 'hello' || lower === 'start') {
-    resetSession(from);
-  }
+  if (['menu', 'hi', 'hello', 'start'].includes(lower)) resetSession(from);
 
   const session = getSession(from);
 
@@ -187,7 +205,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       if (num >= 1 && num <= 6) {
         session.data.category = CATEGORIES[num - 1];
         session.step = 'merchant';
-        twiml.message(`Got it — *${session.data.category}*! 🛍️\n\nMerchant name? (e.g. Zomato, Amazon, MakeMyTrip)\nOr reply *skip* to continue`);
+        twiml.message(`Got it — *${session.data.category}*! 🛍️\n\nMerchant name? (e.g. Zomato, Amazon)\nOr reply *skip*`);
       } else {
         twiml.message(categoryMenu());
       }
@@ -195,7 +213,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     } else if (session.step === 'merchant') {
       session.data.merchant = lower === 'skip' ? '' : body;
       session.step = 'amount';
-      twiml.message(`💸 How much is the transaction amount in ₹?\n\n(Just the number, e.g. 1500)`);
+      twiml.message(`💸 Amount in ₹? (just the number, e.g. 1500)`);
 
     } else if (session.step === 'amount') {
       const amount = parseFloat(body.replace(/,/g, ''));
@@ -204,7 +222,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
       } else {
         session.data.amount = amount;
         session.step = 'txntype';
-        twiml.message(`Online or offline transaction?\n\n1️⃣ Online (app/website)\n2️⃣ Offline (physical store/swipe)\n\nReply 1 or 2`);
+        twiml.message(`Online or offline?\n\n1️⃣ Online (app/website)\n2️⃣ Offline (physical store)\n\nReply 1 or 2`);
       }
 
     } else if (session.step === 'txntype') {
@@ -212,31 +230,17 @@ app.post('/webhook/whatsapp', async (req, res) => {
         session.data.transactionType = body === '1' ? 'online' : 'offline';
         session.step = 'processing';
 
-        twiml.message(`⏳ Analysing across all 6 cards... give me a moment!`);
-        res.type('text/xml');
-        res.send(twiml.toString());
-
-        // Call Claude in background and send result
         try {
+          // Call Claude first, then respond — Vercel terminates after res.send()
           const result = await getRecommendation(session.data);
-          const msg = formatWhatsAppResult(result);
-          const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-          await client.messages.create({
-            from: req.body.To,
-            to: from,
-            body: msg
-          });
+          saveTransaction({ userId: from, category: session.data.category, merchant: session.data.merchant, amount: session.data.amount, transactionType: session.data.transactionType, result, source: 'whatsapp' });
+          twiml.message(`⏳ Analysing done! Here are your results:`);
+          twiml.message(formatWhatsAppResult(result));
         } catch (err) {
-          const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-          await client.messages.create({
-            from: req.body.To,
-            to: from,
-            body: `❌ Sorry, something went wrong: ${err.message}\n\nReply *menu* to try again`
-          });
+          twiml.message(`❌ Sorry, something went wrong. Reply *menu* to try again.\n\nError: ${err.message}`);
         }
 
         resetSession(from);
-        return; // already sent response above
 
       } else {
         twiml.message(`Please reply 1 for Online or 2 for Offline`);
@@ -261,9 +265,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`CardIQ running at http://localhost:${PORT}`);
-  });
+  app.listen(PORT, () => console.log(`CardIQ running at http://localhost:${PORT}`));
 }
 
 module.exports = app;
