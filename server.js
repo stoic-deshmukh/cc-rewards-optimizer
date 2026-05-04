@@ -156,16 +156,30 @@ app.get('/api/history', async (req, res) => {
 
 // ─── WhatsApp bot ─────────────────────────────────────────────────────────────
 
-const sessions = new Map();
 const CATEGORIES = ['dining', 'groceries', 'travel', 'fuel', 'online shopping', 'international'];
 
-function getSession(from) {
-  if (!sessions.has(from)) sessions.set(from, { step: 'category', data: {} });
-  return sessions.get(from);
+async function getSession(from) {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from('whatsapp_sessions')
+    .select('step, data')
+    .eq('phone', from)
+    .single();
+  return data || { step: 'category', data: {} };
 }
 
-function resetSession(from) {
-  sessions.set(from, { step: 'category', data: {} });
+async function saveSession(from, step, data) {
+  const supabase = getSupabase();
+  await supabase.from('whatsapp_sessions').upsert({
+    phone: from, step, data, updated_at: new Date().toISOString()
+  }, { onConflict: 'phone' });
+}
+
+async function resetSession(from) {
+  const supabase = getSupabase();
+  await supabase.from('whatsapp_sessions').upsert({
+    phone: from, step: 'category', data: {}, updated_at: new Date().toISOString()
+  }, { onConflict: 'phone' });
 }
 
 function categoryMenu() {
@@ -195,24 +209,28 @@ app.post('/webhook/whatsapp', async (req, res) => {
   const body = (req.body.Body || '').trim();
   const lower = body.toLowerCase();
 
-  if (['menu', 'hi', 'hello', 'start'].includes(lower)) resetSession(from);
-
-  const session = getSession(from);
-
   try {
+    if (['menu', 'hi', 'hello', 'start'].includes(lower)) {
+      await resetSession(from);
+      twiml.message(categoryMenu());
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    const session = await getSession(from);
+
     if (session.step === 'category') {
       const num = parseInt(body);
       if (num >= 1 && num <= 6) {
-        session.data.category = CATEGORIES[num - 1];
-        session.step = 'merchant';
-        twiml.message(`Got it — *${session.data.category}*! 🛍️\n\nMerchant name? (e.g. Zomato, Amazon)\nOr reply *skip*`);
+        const category = CATEGORIES[num - 1];
+        await saveSession(from, 'merchant', { category });
+        twiml.message(`Got it — *${category}*! 🛍️\n\nMerchant name? (e.g. Zomato, Amazon)\nOr reply *skip*`);
       } else {
         twiml.message(categoryMenu());
       }
 
     } else if (session.step === 'merchant') {
-      session.data.merchant = lower === 'skip' ? '' : body;
-      session.step = 'amount';
+      const merchant = lower === 'skip' ? '' : body;
+      await saveSession(from, 'amount', { ...session.data, merchant });
       twiml.message(`💸 Amount in ₹? (just the number, e.g. 1500)`);
 
     } else if (session.step === 'amount') {
@@ -220,45 +238,39 @@ app.post('/webhook/whatsapp', async (req, res) => {
       if (isNaN(amount) || amount <= 0) {
         twiml.message(`Please enter a valid amount in ₹ (e.g. 1500)`);
       } else {
-        session.data.amount = amount;
-        session.step = 'txntype';
+        await saveSession(from, 'txntype', { ...session.data, amount });
         twiml.message(`Online or offline?\n\n1️⃣ Online (app/website)\n2️⃣ Offline (physical store)\n\nReply 1 or 2`);
       }
 
     } else if (session.step === 'txntype') {
       if (body === '1' || body === '2') {
-        session.data.transactionType = body === '1' ? 'online' : 'offline';
-        session.step = 'processing';
+        const transactionType = body === '1' ? 'online' : 'offline';
+        const txnData = { ...session.data, transactionType };
+        await resetSession(from);
 
         try {
-          // Call Claude first, then respond — Vercel terminates after res.send()
-          const result = await getRecommendation(session.data);
-          saveTransaction({ userId: from, category: session.data.category, merchant: session.data.merchant, amount: session.data.amount, transactionType: session.data.transactionType, result, source: 'whatsapp' });
-          twiml.message(`⏳ Analysing done! Here are your results:`);
+          const result = await getRecommendation(txnData);
+          saveTransaction({ userId: from, ...txnData, result, source: 'whatsapp' });
           twiml.message(formatWhatsAppResult(result));
         } catch (err) {
           twiml.message(`❌ Sorry, something went wrong. Reply *menu* to try again.\n\nError: ${err.message}`);
         }
-
-        resetSession(from);
 
       } else {
         twiml.message(`Please reply 1 for Online or 2 for Offline`);
       }
 
     } else {
-      resetSession(from);
+      await resetSession(from);
       twiml.message(categoryMenu());
     }
 
   } catch (err) {
     console.error('WhatsApp error:', err);
     twiml.message(`❌ Something went wrong. Reply *menu* to start again.`);
-    resetSession(from);
   }
 
-  res.type('text/xml');
-  res.send(twiml.toString());
+  res.type('text/xml').send(twiml.toString());
 });
 
 // ─── Server ───────────────────────────────────────────────────────────────────
