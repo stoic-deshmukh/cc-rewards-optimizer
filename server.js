@@ -239,34 +239,17 @@ app.post('/webhook/whatsapp', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
 
-    // Acknowledge immediately, then process
-    twiml.message(`⏳ Analysing *${txnData.category}* ₹${txnData.amount} ${txnData.transactionType}${txnData.merchant ? ` at ${txnData.merchant}` : ''}...`);
-    res.type('text/xml').send(twiml.toString());
-
-    // Call Claude and send result via Twilio REST API
-    try {
-      const result = await getRecommendation(txnData);
-      saveTransaction({ userId: from, ...txnData, result, source: 'whatsapp' });
-      const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      await twilioClient.messages.create({
-        from: req.body.To,
-        to: from,
-        body: formatWhatsAppResult(result)
-      });
-    } catch (err) {
-      console.error('[WA] error:', err.message);
-      const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      await twilioClient.messages.create({
-        from: req.body.To,
-        to: from,
-        body: `❌ Error: ${err.message}\n\nTry again or reply *help*.`
-      });
-    }
+    // Call Claude FIRST, then respond — Vercel kills the function after res.send()
+    // so any async work after that is lost
+    const result = await getRecommendation(txnData);
+    saveTransaction({ userId: from, ...txnData, result, source: 'whatsapp' });
+    twiml.message(formatWhatsAppResult(result));
+    return res.type('text/xml').send(twiml.toString());
 
   } catch (err) {
-    console.error('[WA] outer error:', err);
-    twiml.message(`❌ Something went wrong. Reply *help* to start.`);
-    res.type('text/xml').send(twiml.toString());
+    console.error('[WA] error:', err.message);
+    twiml.message(`❌ Error: ${err.message}\n\nTry again or reply *help*.`);
+    return res.type('text/xml').send(twiml.toString());
   }
 });
 
