@@ -2,7 +2,6 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createClient } = require('@supabase/supabase-js');
-const twilio = require('twilio');
 const path = require('path');
 
 const app = express();
@@ -56,7 +55,6 @@ async function saveTransaction({ userId, category, merchant, amount, transaction
     });
   } catch (err) {
     console.error('Failed to save transaction:', err.message);
-    // non-fatal — don't break the main flow
   }
 }
 
@@ -118,7 +116,7 @@ Rank all cards. The array must have exactly one entry per card ordered rank 1 (b
   return JSON.parse(jsonStr);
 }
 
-// ─── Web API ─────────────────────────────────────────────────────────────────
+// ─── API ──────────────────────────────────────────────────────────────────────
 
 app.post('/api/recommend', async (req, res) => {
   const { category, merchant, amount, transactionType, userId } = req.body;
@@ -127,7 +125,6 @@ app.post('/api/recommend', async (req, res) => {
   }
   try {
     const result = await getRecommendation({ category, merchant, amount, transactionType });
-    // Save to history (non-blocking)
     saveTransaction({ userId: userId || 'web-anonymous', category, merchant, amount, transactionType, result, source: 'web' });
     res.json(result);
   } catch (err) {
@@ -151,122 +148,6 @@ app.get('/api/history', async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── WhatsApp bot ─────────────────────────────────────────────────────────────
-
-const VALID_CATEGORIES = ['dining', 'groceries', 'travel', 'fuel', 'shopping', 'international', 'entertainment', 'utilities', 'fuel'];
-
-function helpMessage() {
-  return `👋 Welcome to *CardIQ!*
-
-Send your transaction in this format:
-*[category] [merchant] [amount] [online/offline]*
-
-📋 *Categories:*
-dining, groceries, travel, fuel, shopping, international, entertainment, utilities
-
-💡 *Examples:*
-dining zomato 500 online
-groceries bigbasket 1200 online
-travel makemytrip 8000 online
-fuel 2000 offline
-shopping amazon 3500 online
-
-Just send the details and I'll tell you which card to use! 🏆`;
-}
-
-function parseMessage(body) {
-  // Format: [category] [merchant?] [amount] [online|offline]
-  const parts = body.trim().split(/\s+/);
-  if (parts.length < 3) return null;
-
-  const category = parts[0].toLowerCase();
-  if (!VALID_CATEGORIES.includes(category)) return null;
-
-  const txnType = parts[parts.length - 1].toLowerCase();
-  if (!['online', 'offline'].includes(txnType)) return null;
-
-  const amountStr = parts[parts.length - 2];
-  const amount = parseFloat(amountStr.replace(/[,₹]/g, ''));
-  if (isNaN(amount) || amount <= 0) return null;
-
-  const merchant = parts.length > 3 ? parts.slice(1, -2).join(' ') : '';
-
-  return { category, merchant, amount, transactionType: txnType };
-}
-
-function categoryMenu() {
-  return `👋 Welcome to *CardIQ*! Which category is this transaction?\n\n1️⃣ Dining\n2️⃣ Groceries\n3️⃣ Travel\n4️⃣ Fuel\n5️⃣ Online Shopping\n6️⃣ International\n\nReply with a number (1-6)`;
-}
-
-function formatWhatsAppResult(result) {
-  const winner = result.recommendations[0];
-  const lines = [
-    `🏆 *Best Card: ${winner.card}*`,
-    `💰 ${winner.reward_earned} cashback (${winner.effective_cashback_pct})`,
-    `💡 ${winner.key_reason}`,
-    ``,
-    `📊 *All Cards Ranked:*`,
-  ];
-  result.recommendations.forEach((rec) => {
-    const medal = rec.rank === 1 ? '🥇' : rec.rank === 2 ? '🥈' : rec.rank === 3 ? '🥉' : `${rec.rank}.`;
-    lines.push(`${medal} ${rec.card} — ${rec.reward_earned} (${rec.effective_cashback_pct})`);
-  });
-  lines.push('', `📝 ${result.winner_summary}`, '', '_Reply *menu* to analyse another transaction_');
-  return lines.join('\n');
-}
-
-app.post('/webhook/whatsapp', async (req, res) => {
-  const twiml = new twilio.twiml.MessagingResponse();
-  const from = req.body.From || '';
-  const body = (req.body.Body || '').trim();
-  const lower = body.toLowerCase();
-
-  try {
-    // Help command
-    if (['hi', 'hello', 'help', 'menu', 'start'].includes(lower)) {
-      twiml.message(helpMessage());
-      return res.type('text/xml').send(twiml.toString());
-    }
-
-    // Parse single-line transaction
-    const txnData = parseMessage(body);
-
-    if (!txnData) {
-      twiml.message(`❓ Couldn't parse that. Please use this format:\n\n*[category] [merchant] [amount] [online/offline]*\n\nExample: dining zomato 500 online\n\nReply *help* to see all categories.`);
-      return res.type('text/xml').send(twiml.toString());
-    }
-
-    // Respond immediately so Twilio doesn't timeout (15s limit)
-    // then call Claude and send the result via Twilio REST API
-    twiml.message(`⏳ Analysing *${txnData.category}* ₹${txnData.amount} ${txnData.transactionType}${txnData.merchant ? ` at ${txnData.merchant}` : ''}...`);
-    res.type('text/xml').send(twiml.toString());
-
-    // Continue processing after response is sent
-    const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    try {
-      const result = await getRecommendation(txnData);
-      saveTransaction({ userId: from, ...txnData, result, source: 'whatsapp' });
-      await twilioClient.messages.create({
-        from: req.body.To,
-        to: from,
-        body: formatWhatsAppResult(result)
-      });
-    } catch (err) {
-      console.error('[WA] error:', err.message);
-      await twilioClient.messages.create({
-        from: req.body.To,
-        to: from,
-        body: `❌ Error: ${err.message}\n\nTry again or reply *help*.`
-      });
-    }
-
-  } catch (err) {
-    console.error('[WA] outer error:', err.message);
-    twiml.message(`❌ Something went wrong. Reply *help* to start over.`);
-    return res.type('text/xml').send(twiml.toString());
   }
 });
 
