@@ -19,22 +19,42 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+let cardCache = { data: null, fetchedAt: 0 };
+const CARD_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 async function getCardStructures() {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('cards')
-    .select('card_name, issuer, reward_structure, last_updated')
-    .eq('is_active', true)
-    .order('card_name');
+  const now = Date.now();
+  if (cardCache.data && now - cardCache.fetchedAt < CARD_CACHE_TTL_MS) {
+    return cardCache.data;
+  }
 
-  if (error) throw new Error(`Failed to fetch card data: ${error.message}`);
-  if (!data || data.length === 0) throw new Error('No active cards found in database');
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('cards')
+      .select('card_name, issuer, reward_structure, last_updated')
+      .eq('is_active', true)
+      .order('card_name');
 
-  return data
-    .map((card, i) =>
-      `### ${i + 1}. ${card.card_name} (${card.issuer})\nLast updated: ${new Date(card.last_updated).toDateString()}\n${card.reward_structure}`
-    )
-    .join('\n\n');
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) throw new Error('No active cards found in database');
+
+    const formatted = data
+      .map((card, i) =>
+        `### ${i + 1}. ${card.card_name} (${card.issuer})\nLast updated: ${new Date(card.last_updated).toDateString()}\n${card.reward_structure}`
+      )
+      .join('\n\n');
+
+    cardCache = { data: formatted, fetchedAt: now };
+    return formatted;
+  } catch (err) {
+    // If Supabase is unreachable but we have stale cache, use it rather than failing
+    if (cardCache.data) {
+      console.warn('Supabase fetch failed, using stale cache:', err.message);
+      return cardCache.data;
+    }
+    throw new Error(`Failed to fetch card data: ${err.message}`);
+  }
 }
 
 async function saveTransaction({ userId, category, merchant, amount, transactionType, result, source }) {
